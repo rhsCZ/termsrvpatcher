@@ -1,0 +1,8 @@
+.vs/
+releases/
+rhscz.cer
+rhscz.pfx
+rhscz.pvk
+sign.sgui
+output/
+tmp/
