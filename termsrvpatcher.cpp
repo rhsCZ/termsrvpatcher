@@ -26,6 +26,7 @@ using std::ostream_iterator;
 using std::vector;
 using std::ios;
 using std::hex;
+int type = 0;
 bool patched = false;
 
 void pause()
@@ -115,9 +116,16 @@ int main(int argc,char** argv)
 		b = buffer.size();
 		for (size_t i = 0; i < buffer.size(); i++)
 		{
-			if (buffer[i] == 0x39 && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x06)
+			if ((buffer[i] == 0x39 && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x06 && buffer[i + 4] == 0x00 && buffer[i + 5] == 0x00 && buffer[i + 6] == 0x0F && buffer[i + 7] == 0x84)  || (buffer[i] == 0x8B && buffer[i + 1] == 0x99 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x06 && buffer[i + 4] == 0x00 && buffer[i + 5] == 0x00 && buffer[i + 6] == 0x8B && buffer[i + 7] == 0xB9) || (buffer[i] == 0x39 && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x8B && buffer[i + 4] == 0xC0 && buffer[i + 5] == 0x48 && buffer[i + 6] == 0x83 && buffer[i + 7] == 0xC4))
 			{
-				
+				type = 0;
+				pos = i;
+				patched = true;
+				break;
+			}
+			else if (buffer[i] == 0x8B && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x38 && buffer[i + 3] == 0x06 && buffer[i + 4] == 0x00 && buffer[i + 5] == 0x00 && buffer[i + 6] == 0x39 && buffer[i + 7] == 0x81)
+			{
+				type = 1;
 				pos = i;
 				patched = true;
 				break;
@@ -129,19 +137,43 @@ int main(int argc,char** argv)
 			}
 		}
 		if(pos != 0)
-		{ 
-		buffer[pos] = 0xb8;
-		buffer[pos + 1] = 0x00;
-		buffer[pos + 2] = 0x01;
-		buffer[pos + 3] = 0x00;
-		buffer[pos + 4] = 0x00;
-		buffer[pos + 5] = 0x89;
-		buffer[pos + 6] = 0x81;
-		buffer[pos + 7] = 0x38;
-		buffer[pos + 8] = 0x06;
-		buffer[pos + 9] = 0x00;
-		buffer[pos + 10] = 0x00;
-		buffer[pos + 11] = 0x90;
+		{
+			switch (type)
+			{
+				case 0:
+				{
+					buffer[pos] = 0xb8;
+					buffer[pos + 1] = 0x00;
+					buffer[pos + 2] = 0x01;
+					buffer[pos + 3] = 0x00;
+					buffer[pos + 4] = 0x00;
+					buffer[pos + 5] = 0x89;
+					buffer[pos + 6] = 0x81;
+					buffer[pos + 7] = 0x38;
+					buffer[pos + 8] = 0x06;
+					buffer[pos + 9] = 0x00;
+					buffer[pos + 10] = 0x00;
+					buffer[pos + 11] = 0x90;
+					break;
+				}
+				case 1:
+				{
+					buffer[pos] = 0xb8;
+					buffer[pos + 1] = 0x00;
+					buffer[pos + 2] = 0x01;
+					buffer[pos + 3] = 0x00;
+					buffer[pos + 4] = 0x00;
+					buffer[pos + 5] = 0x89;
+					buffer[pos + 6] = 0x81;
+					buffer[pos + 7] = 0x38;
+					buffer[pos + 8] = 0x06;
+					buffer[pos + 9] = 0x00;
+					buffer[pos + 10] = 0x00;
+					buffer[pos + 11] = 0x90;
+					buffer[pos + 12] = 0xeb;
+					break;
+				}
+			}
 		ostream_iterator<TCHAR, TCHAR> output_iterator(fout);
 		copy(buffer.begin(), buffer.end(), output_iterator);
 		}

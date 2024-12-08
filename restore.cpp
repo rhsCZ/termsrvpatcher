@@ -231,10 +231,10 @@ int main(int argc, char** argv)
 			wstring prop1 = { '\0' }, prop2 = { '\0' };
 			memset(buf, 0, UNICODE_STRING_MAX_CHARS);
 			swscanf_s(file1.c_str(), L"\\\\?\\%s", buf,MAX_PATH);
-			GetPropertyValue(buf, L"System.FileVersion", &prop1);
+			GetPropertyValue(buf, L"System.Software.ProductVersion", &prop1);
 			memset(buf, 0, UNICODE_STRING_MAX_CHARS);
 			swscanf_s(file2.c_str(), L"\\\\?\\%s", buf, MAX_PATH);
-			GetPropertyValue(buf, L"System.FileVersion", &prop2);
+			GetPropertyValue(buf, L"System.Software.ProductVersion", &prop2);
 			if (!prop1.compare(prop2))
 			{
 				
@@ -262,6 +262,8 @@ int main(int argc, char** argv)
 			else
 			{
 				wcout << "File versions is different between termsrv.dll and termsrv.dll.bak" << endl;
+				wcout << "Prop1 = " << prop1 << endl;
+				wcout << "Prop2 = " << prop2 << endl;
 				wcout << "cannot continue!!" << endl;
 				free(buf);
 				pause();
