@@ -10,6 +10,8 @@
 #include <vector>
 #include <fstream>
 #include <Windows.h>
+#include <optional>
+using Byte = unsigned char;
 typedef wchar_t wchar;
 int execute(const wchar* command);
 void pause();
@@ -26,8 +28,53 @@ using std::ostream_iterator;
 using std::vector;
 using std::ios;
 using std::hex;
-int type = 0;
 bool patched = false;
+
+struct Pattern
+{
+	vector<Byte> find;
+	vector<bool> mask; // true -> exact match, false -> wildcard
+	vector<Byte> replace;
+	bool keep_next_byte = false; // keep byte immediately after the pattern (jump offset)
+};
+
+bool matches_at(const vector<Byte>& buffer, size_t pos, const Pattern& pattern)
+{
+	if (buffer.size() < pos + pattern.find.size())
+	{
+		return false;
+	}
+
+	for (size_t i = 0; i < pattern.find.size(); ++i)
+	{
+		if (pattern.mask[i] && buffer[pos + i] != pattern.find[i])
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+std::optional<size_t> find_pattern(const vector<Byte>& buffer, const Pattern& pattern)
+{
+	if (pattern.find.empty() || pattern.find.size() != pattern.mask.size())
+	{
+		return std::nullopt;
+	}
+
+	for (size_t i = 0; i + pattern.find.size() <= buffer.size(); ++i)
+	{
+		if (matches_at(buffer, i, pattern))
+		{
+			if (pattern.keep_next_byte && i + pattern.find.size() >= buffer.size())
+			{
+				continue;
+			}
+			return i;
+		}
+	}
+	return std::nullopt;
+}
 
 void pause()
 {
@@ -89,8 +136,8 @@ int main(int argc,char** argv)
 		return -1;
 	}
 	wstring tempdir = { '\0' }, file1 = { '\0' }, file2 = { '\0' }, file3 = { '\0' }, file4 = { '\0' }, file5 = { '\0' };
-	wfstream fout;
-	wfstream fin;
+	std::ofstream fout;
+	std::ifstream fin;
 	wstringstream ss;
 	ss.clear();
 	GetEnvironmentVariableW(L"TEMP", buf, UNICODE_STRING_MAX_CHARS-20);
@@ -106,78 +153,55 @@ int main(int argc,char** argv)
 	file5 = ss.str();
 	CreateDirectoryW(tempdir.c_str(), NULL);
 	CopyFileW(file1.c_str(), file4.c_str(), FALSE);
-	fin.open(file4, wfstream::binary | wfstream::in, _SH_DENYWR);
-	fout.open(file5, wfstream::binary | wfstream::out);
+	fin.open(file4, std::ios::binary);
+	fout.open(file5, std::ios::binary | std::ios::out);
 	if (fin.is_open() && fout.is_open())
 	{
-		size_t b;
 		size_t pos=0;
-		vector<TCHAR> buffer(istreambuf_iterator<TCHAR>(fin), {});
-		b = buffer.size();
-		for (size_t i = 0; i < buffer.size(); i++)
+		vector<Byte> buffer((istreambuf_iterator<char>(fin)), istreambuf_iterator<char>());
+
+		const vector<Byte> replace_standard = { 0xB8, 0x00, 0x01, 0x00, 0x00, 0x89, 0x81, 0x38, 0x06, 0x00, 0x00, 0x90 };
+		const vector<Byte> replace_with_jump = { 0xB8, 0x00, 0x01, 0x00, 0x00, 0x89, 0x81, 0x38, 0x06, 0x00, 0x00, 0x90, 0xEB };
+		const vector<Pattern> patterns = {
+			// 39 81 3C 06 00 00 0F 84 xx xx xx xx
+			{ { 0x39, 0x81, 0x3C, 0x06, 0x00, 0x00, 0x0F, 0x84, 0x00, 0x00, 0x00, 0x00 },
+			  { true, true, true, true, true, true, true, true, false, false, false, false },
+			  replace_standard },
+			// 8B 99 3C 06 00 00 8B B9 38 06 00 00
+			{ { 0x8B, 0x99, 0x3C, 0x06, 0x00, 0x00, 0x8B, 0xB9, 0x38, 0x06, 0x00, 0x00 },
+			  vector<bool>(12, true),
+			  replace_standard },
+			// 39 81 3C 8B C0 48 83 C4 28 C3 CC CC
+			{ { 0x39, 0x81, 0x3C, 0x8B, 0xC0, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0xCC, 0xCC },
+			  vector<bool>(12, true),
+			  replace_standard },
+			// 8B 81 38 06 00 00 39 81 3C 06 00 00 75 (offset follows)
+			{ { 0x8B, 0x81, 0x38, 0x06, 0x00, 0x00, 0x39, 0x81, 0x3C, 0x06, 0x00, 0x00, 0x75 },
+			  vector<bool>(13, true),
+			  replace_with_jump,
+			  true }
+		};
+
+		for (const auto& pattern : patterns)
 		{
-			if ((buffer[i] == 0x39 && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x06 && buffer[i + 4] == 0x00 && buffer[i + 5] == 0x00 && buffer[i + 6] == 0x0F && buffer[i + 7] == 0x84)  || (buffer[i] == 0x8B && buffer[i + 1] == 0x99 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x06 && buffer[i + 4] == 0x00 && buffer[i + 5] == 0x00 && buffer[i + 6] == 0x8B && buffer[i + 7] == 0xB9) || (buffer[i] == 0x39 && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x3c && buffer[i + 3] == 0x8B && buffer[i + 4] == 0xC0 && buffer[i + 5] == 0x48 && buffer[i + 6] == 0x83 && buffer[i + 7] == 0xC4))
+			std::optional<size_t> found = find_pattern(buffer, pattern);
+			if (found.has_value())
 			{
-				type = 0;
-				pos = i;
+				pos = found.value();
+				for (size_t j = 0; j < pattern.replace.size(); ++j)
+				{
+					buffer[pos + j] = pattern.replace[j];
+				}
+				// leave the following byte untouched for short jump patterns (offset stays valid)
 				patched = true;
 				break;
 			}
-			else if (buffer[i] == 0x8B && buffer[i + 1] == 0x81 && buffer[i + 2] == 0x38 && buffer[i + 3] == 0x06 && buffer[i + 4] == 0x00 && buffer[i + 5] == 0x00 && buffer[i + 6] == 0x39 && buffer[i + 7] == 0x81)
-			{
-				type = 1;
-				pos = i;
-				patched = true;
-				break;
-			}
-			if (i == (buffer.size() - 1))
-			{
-				pos = 0;
-				break;
-			}
 		}
-		if(pos != 0)
+		if(patched)
 		{
-			switch (type)
-			{
-				case 0:
-				{
-					buffer[pos] = 0xb8;
-					buffer[pos + 1] = 0x00;
-					buffer[pos + 2] = 0x01;
-					buffer[pos + 3] = 0x00;
-					buffer[pos + 4] = 0x00;
-					buffer[pos + 5] = 0x89;
-					buffer[pos + 6] = 0x81;
-					buffer[pos + 7] = 0x38;
-					buffer[pos + 8] = 0x06;
-					buffer[pos + 9] = 0x00;
-					buffer[pos + 10] = 0x00;
-					buffer[pos + 11] = 0x90;
-					break;
-				}
-				case 1:
-				{
-					buffer[pos] = 0xb8;
-					buffer[pos + 1] = 0x00;
-					buffer[pos + 2] = 0x01;
-					buffer[pos + 3] = 0x00;
-					buffer[pos + 4] = 0x00;
-					buffer[pos + 5] = 0x89;
-					buffer[pos + 6] = 0x81;
-					buffer[pos + 7] = 0x38;
-					buffer[pos + 8] = 0x06;
-					buffer[pos + 9] = 0x00;
-					buffer[pos + 10] = 0x00;
-					buffer[pos + 11] = 0x90;
-					buffer[pos + 12] = 0xeb;
-					break;
-				}
-			}
-		ostream_iterator<TCHAR, TCHAR> output_iterator(fout);
-		copy(buffer.begin(), buffer.end(), output_iterator);
+			ostream_iterator<char, char> output_iterator(fout);
+			copy(buffer.begin(), buffer.end(), output_iterator);
 		}
-			//fout.write((char*)&buffer[0], buffer.size() * sizeof(buffer));
 	}
 	else
 	{
